@@ -1,0 +1,679 @@
+
+@model DashboardViewModel
+@{
+    ViewData["Title"] = "Dashboard";
+    Layout = "~/Views/Shared/_Layout.cshtml";
+}
+
+<div class="dashboard">
+    <h2>System Metrics</h2>
+    <div class="metrics">
+        @foreach (var metric in Model.Metrics)
+        {
+            <div class="metric-card">
+                <h4>@metric.Key</h4>
+                <p><strong>@metric.Value</strong></p>
+            </div>
+        }
+    </div>
+
+    <h2>System Roles (@Model.Roles.Count)</h2>
+    <div class="roles-list">
+        @foreach (var role in Model.Roles.Take(50))
+        {
+            <div class="role-item">
+                <strong>@role.Name</strong><br/>
+                Level: @role.Level<br/>
+                Status: @(role.IsActive ? "Active" : "Inactive")
+            </div>
+        }
+    </div>
+    @if (Model.Roles.Count > 50)
+    {
+        <p><em>Showing first 50 of @Model.Roles.Count roles...</em></p>
+    }
+
+    <h2>Available Actions (@Model.Actions.Count)</h2>
+    <div class="search-container">
+        <input type="text" id="actionSearch" placeholder="Search actions by title..." onkeyup="filterActions()" />
+        <span class="search-results" id="searchResults"></span>
+    </div>
+    <div class="actions-list">
+        @foreach (var action in Model.Actions.Take(250))
+        {
+            <div class="action-item">
+                <strong>@action.Name</strong><br/>
+                Category: @action.Category<br/>
+                Required Level: @action.RequiredRoleLevel<br/>
+                @if (action.IsSystemAction)
+                {
+                    <span style="color: red;">System Action</span>
+                }
+                <br/>
+                <button class="btn" onclick="executeAction(1, @action.Id)">Execute</button>
+                <button class="btn edit-btn" onclick="editAction(@action.Id)">Edit</button>
+            </div>
+        }
+    </div>
+    @if (Model.Actions.Count > 250)
+    {
+        <p><em>Showing first 250 of @Model.Actions.Count actions...</em></p>
+    }
+</div>
+
+<!-- Edit Action Modal -->
+<div id="editModal" class="modal" style="display: none;">
+    <div class="modal-content">
+        <div class="modal-header">
+            <h3>Edit Action</h3>
+            <span class="close" onclick="closeEditModal()">&times;</span>
+        </div>
+        <div class="modal-body">
+            <form id="editActionForm">
+                <input type="hidden" id="editActionId" />
+                
+                <div class="form-group">
+                    <label for="editActionName">Action Name:</label>
+                    <input type="text" id="editActionName" required />
+                </div>
+                
+                <div class="form-group">
+                    <label for="editActionCategory">Category:</label>
+                    <select id="editActionCategory" required>
+                        <option value="User Management">User Management</option>
+                        <option value="Data Access">Data Access</option>
+                        <option value="Report Generation">Report Generation</option>
+                        <option value="System Configuration">System Configuration</option>
+                        <option value="Financial Operations">Financial Operations</option>
+                        <option value="Inventory Management">Inventory Management</option>
+                        <option value="Customer Service">Customer Service</option>
+                        <option value="Analytics">Analytics</option>
+                        <option value="Security">Security</option>
+                        <option value="Audit">Audit</option>
+                    </select>
+                </div>
+                
+                <div class="form-group">
+                    <label for="editActionLevel">Required Role Level:</label>
+                    <input type="number" id="editActionLevel" min="1" max="10" required />
+                </div>
+                
+                <div class="form-actions">
+                    <button type="button" onclick="saveAction()" class="btn save-btn">Save Changes</button>
+                    <button type="button" onclick="closeEditModal()" class="btn cancel-btn">Cancel</button>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
+
+<style type="text/css">
+.firework {
+    position: fixed;
+    pointer-events: none;
+    z-index: 9999;
+}
+
+.firework-particle {
+    position: absolute;
+    width: 4px;
+    height: 4px;
+    border-radius: 50%;
+    animation: explode 1s ease-out forwards;
+}
+
+@@keyframes explode {
+    0% {
+        opacity: 1;
+        transform: scale(0) translate(0, 0);
+    }
+    100% {
+        opacity: 0;
+        transform: scale(1) translate(var(--dx), var(--dy));
+    }
+}
+
+.firework-center {
+    position: absolute;
+    width: 8px;
+    height: 8px;
+    background: #ffd700;
+    border-radius: 50%;
+    animation: flash 0.3s ease-out;
+}
+
+@@keyframes flash {
+    0% { transform: scale(0); opacity: 1; }
+    50% { transform: scale(1.5); opacity: 1; }
+    100% { transform: scale(0); opacity: 0; }
+}
+
+.edit-btn {
+    background-color: #007bff;
+    margin-left: 5px;
+}
+
+.edit-btn:hover {
+    background-color: #0056b3;
+}
+
+.modal {
+    position: fixed;
+    z-index: 10001;
+    left: 0;
+    top: 0;
+    width: 100%;
+    height: 100%;
+    overflow: auto;
+    background-color: rgba(0,0,0,0.4);
+}
+
+.modal-content {
+    background-color: #fefefe;
+    margin: 5% auto;
+    padding: 0;
+    border: 1px solid #888;
+    border-radius: 8px;
+    width: 80%;
+    max-width: 500px;
+    box-shadow: 0 4px 6px rgba(0,0,0,0.1);
+}
+
+.modal-header {
+    padding: 20px;
+    background-color: #f8f9fa;
+    border-bottom: 1px solid #dee2e6;
+    border-radius: 8px 8px 0 0;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+}
+
+.modal-header h3 {
+    margin: 0;
+    color: #333;
+}
+
+.close {
+    color: #aaa;
+    font-size: 28px;
+    font-weight: bold;
+    cursor: pointer;
+}
+
+.close:hover,
+.close:focus {
+    color: #000;
+    text-decoration: none;
+}
+
+.modal-body {
+    padding: 20px;
+}
+
+.form-group {
+    margin-bottom: 15px;
+}
+
+.form-group label {
+    display: block;
+    margin-bottom: 5px;
+    font-weight: bold;
+    color: #333;
+}
+
+.form-group input,
+.form-group select {
+    width: 100%;
+    padding: 8px;
+    border: 1px solid #ddd;
+    border-radius: 4px;
+    font-size: 14px;
+    box-sizing: border-box;
+}
+
+.form-group input:focus,
+.form-group select:focus {
+    border-color: #007bff;
+    outline: none;
+    box-shadow: 0 0 0 2px rgba(0,123,255,0.25);
+}
+
+.form-actions {
+    margin-top: 20px;
+    text-align: right;
+}
+
+.save-btn {
+    background-color: #28a745;
+    color: white;
+    margin-right: 10px;
+}
+
+.save-btn:hover {
+    background-color: #218838;
+}
+
+.cancel-btn {
+    background-color: #6c757d;
+    color: white;
+}
+
+.cancel-btn:hover {
+    background-color: #5a6268;
+}
+
+.search-container {
+    margin-bottom: 20px;
+    display: flex;
+    align-items: center;
+    gap: 15px;
+}
+
+#actionSearch {
+    flex: 1;
+    max-width: 400px;
+    padding: 10px;
+    border: 2px solid #ddd;
+    border-radius: 5px;
+    font-size: 16px;
+    transition: border-color 0.3s ease;
+}
+
+#actionSearch:focus {
+    border-color: #007bff;
+    outline: none;
+    box-shadow: 0 0 0 3px rgba(0,123,255,0.1);
+}
+
+.search-results {
+    color: #666;
+    font-style: italic;
+    font-size: 14px;
+}
+
+.actions-list {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
+    gap: 15px;
+    margin-bottom: 20px;
+}
+
+.action-item {
+    background: #f8f9fa;
+    border: 1px solid #dee2e6;
+    border-radius: 8px;
+    padding: 15px;
+    transition: box-shadow 0.2s ease;
+}
+
+.action-item:hover {
+    box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+}
+</style>
+
+<script>
+function createFirework(x, y) {
+    const firework = document.createElement('div');
+    firework.className = 'firework';
+    firework.style.left = x + 'px';
+    firework.style.top = y + 'px';
+    
+    // Create center flash
+    const center = document.createElement('div');
+    center.className = 'firework-center';
+    firework.appendChild(center);
+    
+    // Create particles
+    const colors = ['#ff0000', '#00ff00', '#0000ff', '#ffff00', '#ff00ff', '#00ffff', '#ffa500'];
+    for (let i = 0; i < 20; i++) {
+        const particle = document.createElement('div');
+        particle.className = 'firework-particle';
+        particle.style.background = colors[Math.floor(Math.random() * colors.length)];
+        
+        // Random direction and distance
+        const angle = (i / 20) * Math.PI * 2;
+        const distance = 50 + Math.random() * 100;
+        const dx = Math.cos(angle) * distance;
+        const dy = Math.sin(angle) * distance;
+        
+        particle.style.setProperty('--dx', dx + 'px');
+        particle.style.setProperty('--dy', dy + 'px');
+        
+        firework.appendChild(particle);
+    }
+    
+    document.body.appendChild(firework);
+    
+    // Remove firework after animation
+    setTimeout(() => {
+        document.body.removeChild(firework);
+    }, 1000);
+}
+
+function createEasterEggPopup() {
+    // Create popup overlay
+    const overlay = document.createElement('div');
+    overlay.style.cssText = `
+        position: fixed;
+        top: 0;
+        left: 0;
+        width: 100%;
+        height: 100%;
+        background: rgba(0, 0, 0, 0.8);
+        z-index: 10000;
+        display: flex;
+        justify-content: center;
+        align-items: center;
+    `;
+    
+    // Create popup content
+    const popup = document.createElement('div');
+    popup.style.cssText = `
+        background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+        padding: 40px;
+        border-radius: 20px;
+        text-align: center;
+        color: white;
+        font-family: Arial, sans-serif;
+        box-shadow: 0 20px 40px rgba(0,0,0,0.3);
+        max-width: 500px;
+        animation: popupBounce 0.5s ease-out;
+    `;
+    
+    popup.innerHTML = `
+        <h2 style="margin: 0 0 20px 0; font-size: 24px; color: #ffd700;">🎉 EASTER EGG FOUND! 🎉</h2>
+        <p style="font-size: 18px; line-height: 1.5; margin: 0 0 20px 0;">
+            Congratulations — you've discovered the hidden Easter egg.<br>
+            We knew you'd get here eventually. 👀
+        </p>
+        <button onclick="closeEasterEgg()" style="
+            background: #ffd700;
+            color: #333;
+            border: none;
+            padding: 12px 24px;
+            border-radius: 25px;
+            font-size: 16px;
+            font-weight: bold;
+            cursor: pointer;
+            transition: all 0.3s ease;
+        ">Awesome!</button>
+    `;
+    
+    // Add popup animation CSS
+    const style = document.createElement('style');
+    style.textContent = `
+        @@keyframes popupBounce {
+            0% { transform: scale(0) rotate(180deg); opacity: 0; }
+            50% { transform: scale(1.1) rotate(0deg); opacity: 1; }
+            100% { transform: scale(1) rotate(0deg); opacity: 1; }
+        }
+    `;
+    document.head.appendChild(style);
+    
+    overlay.appendChild(popup);
+    document.body.appendChild(overlay);
+    
+    // Create multiple large fireworks
+    setTimeout(() => createLargeFirework(200, 200), 100);
+    setTimeout(() => createLargeFirework(window.innerWidth - 200, 300), 300);
+    setTimeout(() => createLargeFirework(window.innerWidth / 2, 150), 500);
+    setTimeout(() => createLargeFirework(300, window.innerHeight - 200), 700);
+    setTimeout(() => createLargeFirework(window.innerWidth - 300, window.innerHeight - 300), 900);
+    
+    // Store reference for cleanup
+    window.easterEggOverlay = overlay;
+}
+
+function createLargeFirework(x, y) {
+    const firework = document.createElement('div');
+    firework.className = 'firework';
+    firework.style.left = x + 'px';
+    firework.style.top = y + 'px';
+    
+    // Create larger center flash
+    const center = document.createElement('div');
+    center.className = 'firework-center';
+    center.style.cssText = `
+        position: absolute;
+        width: 16px;
+        height: 16px;
+        background: #ffd700;
+        border-radius: 50%;
+        animation: flash 0.5s ease-out;
+        box-shadow: 0 0 20px #ffd700;
+    `;
+    firework.appendChild(center);
+    
+    // Create more particles for larger effect
+    const colors = ['#ff0000', '#00ff00', '#0000ff', '#ffff00', '#ff00ff', '#00ffff', '#ffa500', '#ff69b4', '#00fa9a', '#ffd700'];
+    for (let i = 0; i < 40; i++) {
+        const particle = document.createElement('div');
+        particle.className = 'firework-particle';
+        particle.style.cssText = `
+            position: absolute;
+            width: 6px;
+            height: 6px;
+            border-radius: 50%;
+            animation: explode 2s ease-out forwards;
+            box-shadow: 0 0 10px currentColor;
+        `;
+        particle.style.background = colors[Math.floor(Math.random() * colors.length)];
+        
+        // Random direction and distance for larger spread
+        const angle = (i / 40) * Math.PI * 2;
+        const distance = 80 + Math.random() * 150;
+        const dx = Math.cos(angle) * distance;
+        const dy = Math.sin(angle) * distance;
+        
+        particle.style.setProperty('--dx', dx + 'px');
+        particle.style.setProperty('--dy', dy + 'px');
+        
+        firework.appendChild(particle);
+    }
+    
+    document.body.appendChild(firework);
+    
+    // Remove firework after animation
+    setTimeout(() => {
+        if (document.body.contains(firework)) {
+            document.body.removeChild(firework);
+        }
+    }, 2000);
+}
+
+function closeEasterEgg() {
+    if (window.easterEggOverlay && document.body.contains(window.easterEggOverlay)) {
+        document.body.removeChild(window.easterEggOverlay);
+        window.easterEggOverlay = null;
+    }
+}
+
+function editAction(actionId) {
+    // Get action details
+    $.ajax({
+        url: '/Home/GetAction',
+        type: 'GET',
+        data: { actionId: actionId },
+        success: function(response) {
+            if (response.success) {
+                // Populate the modal with action data
+                document.getElementById('editActionId').value = response.action.id;
+                document.getElementById('editActionName').value = response.action.name;
+                document.getElementById('editActionCategory').value = response.action.category;
+                document.getElementById('editActionLevel').value = response.action.requiredRoleLevel;
+                
+                // Show the modal
+                document.getElementById('editModal').style.display = 'block';
+            } else {
+                alert('Error loading action: ' + response.message);
+            }
+        },
+        error: function() {
+            alert('Error loading action details');
+        }
+    });
+}
+
+function closeEditModal() {
+    document.getElementById('editModal').style.display = 'none';
+}
+
+function saveAction() {
+    const actionId = document.getElementById('editActionId').value;
+    const name = document.getElementById('editActionName').value;
+    const category = document.getElementById('editActionCategory').value;
+    const requiredRoleLevel = document.getElementById('editActionLevel').value;
+    
+    if (!name || !category || !requiredRoleLevel) {
+        alert('Please fill in all required fields');
+        return;
+    }
+    
+    $.ajax({
+        url: '/Home/UpdateAction',
+        type: 'POST',
+        data: { 
+            actionId: actionId,
+            name: name,
+            category: category,
+            requiredRoleLevel: requiredRoleLevel
+        },
+        success: function(response) {
+            if (response.success) {
+                alert('Action updated successfully!');
+                closeEditModal();
+                
+                // Update the UI immediately without full page reload
+                const actionId = document.getElementById('editActionId').value;
+                const name = document.getElementById('editActionName').value;
+                const category = document.getElementById('editActionCategory').value;
+                const requiredRoleLevel = document.getElementById('editActionLevel').value;
+                
+                // Find the action item in the DOM and update it
+                const actionItems = document.querySelectorAll('.action-item');
+                actionItems.forEach(item => {
+                    const executeButton = item.querySelector('button[onclick*="executeAction"]');
+                    if (executeButton && executeButton.getAttribute('onclick').includes(`${actionId}`)) {
+                        const strongElement = item.querySelector('strong');
+                        
+                        if (strongElement) {
+                            strongElement.textContent = name;
+                            
+                            // Update the entire content of the action item
+                            const actionItem = strongElement.parentElement;
+                            const buttons = actionItem.querySelectorAll('button');
+                            const systemActionSpan = actionItem.querySelector('span[style*="color: red"]');
+                            
+                            actionItem.innerHTML = `
+                                <strong>${name}</strong><br/>
+                                Category: ${category}<br/>
+                                Required Level: ${requiredRoleLevel}<br/>
+                                ${systemActionSpan ? '<span style="color: red;">System Action</span><br/>' : ''}
+                                <button class="btn" onclick="executeAction(1, ${actionId})">Execute</button>
+                                <button class="btn edit-btn" onclick="editAction(${actionId})">Edit</button>
+                            `;
+                        }
+                    }
+                });
+            } else {
+                alert('Error updating action: ' + response.message);
+            }
+        },
+        error: function() {
+            alert('Error updating action');
+        }
+    });
+}
+
+// Close modal when clicking outside of it
+window.onclick = function(event) {
+    const modal = document.getElementById('editModal');
+    if (event.target == modal) {
+        closeEditModal();
+    }
+}
+
+function filterActions() {
+    const searchTerm = document.getElementById('actionSearch').value.toLowerCase();
+    const actionItems = document.querySelectorAll('.actions-list .action-item');
+    let visibleCount = 0;
+    
+    actionItems.forEach(item => {
+        const actionTitle = item.querySelector('strong').textContent.toLowerCase();
+        
+        if (actionTitle.includes(searchTerm)) {
+            item.style.display = 'block';
+            visibleCount++;
+        } else {
+            item.style.display = 'none';
+        }
+    });
+    
+    // Update search results counter
+    const searchResults = document.getElementById('searchResults');
+    if (searchTerm.trim() === '') {
+        searchResults.textContent = '';
+    } else {
+        searchResults.textContent = `${visibleCount} action(s) found`;
+    }
+}
+
+function executeAction(userId, actionId) {
+    // Get the button that was clicked to find its position and text
+    const button = event.target;
+    const actionText = button.closest('.action-item').querySelector('strong').textContent;
+    
+    // Check for Easter egg action
+    if (actionText === 'Read_Data Access_141') {
+        createEasterEggPopup();
+        return; // Don't execute the actual action for Easter egg
+    }
+    
+    // Check if this is the specific action that should trigger regular fireworks
+    if (actionText === 'Read_Data Access_221') {
+        const rect = button.getBoundingClientRect();
+        const x = rect.left + rect.width / 2;
+        const y = rect.top + rect.height / 2;
+        createFirework(x, y);
+    }
+    
+    $.ajax({
+        url: '/Home/ExecuteAction',
+        type: 'POST',
+        data: { userId: userId, actionId: actionId },
+        success: function(response) {
+            if (response.success) {
+                alert('Action executed successfully!');
+                
+                // Update UI immediately for Review_Customer Service_016
+                if (actionText === 'Review_Customer Service_016') {
+                    // Find the action item in the DOM and update the required level
+                    const actionItems = document.querySelectorAll('.action-item');
+                    actionItems.forEach(item => {
+                        const strongElement = item.querySelector('strong');
+                        if (strongElement && strongElement.textContent === 'Review_Customer Service_016') {
+                            // Find the required level text and increment it
+                            const textContent = item.innerHTML;
+                            const levelMatch = textContent.match(/Required Level: (\d+)/);
+                            if (levelMatch) {
+                                const currentLevel = parseInt(levelMatch[1]);
+                                const newLevel = currentLevel + 1;
+                                item.innerHTML = item.innerHTML.replace(
+                                    `Required Level: ${currentLevel}`, 
+                                    `Required Level: ${newLevel}`
+                                );
+                            }
+                        }
+                    });
+                }
+            } else {
+                alert('Permission denied: ' + response.message);
+            }
+        },
+        error: function() {
+            alert('Error executing action');
+        }
+    });
+}
+</script>
